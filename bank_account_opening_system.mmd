@@ -1,0 +1,292 @@
+---
+title: Order example
+---
+
+erDiagram
+    %% Reference/Lookup Tables
+    branches {
+        int id PK
+        varchar branch_code UK "Unique branch identifier"
+        varchar branch_name "Branch display name"
+        varchar address_line1
+        varchar address_line2
+        varchar city
+        varchar state
+        varchar postal_code
+        varchar country "ISO country code"
+        varchar phone
+        varchar email
+        varchar manager_name
+        boolean is_active
+        int sort_order
+        timestamptz created_at
+    }
+
+    staff_members {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        varchar employee_id UK "Internal employee identifier"
+        varchar first_name
+        varchar last_name
+        varchar email UK
+        varchar phone
+        int branch_id FK
+        varchar role "TELLER, MANAGER, COMPLIANCE_OFFICER"
+        boolean is_active
+        date hire_date
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by
+        bigint updated_by
+        int version
+    }
+
+    %% Main Business Entities
+    customers {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        varchar first_name
+        varchar last_name
+        date date_of_birth "Must be 18+ for account opening"
+        varchar email UK "Primary contact and login"
+        varchar phone "Contact phone number"
+        enum customer_type "INDIVIDUAL, BUSINESS, JOINT"
+        varchar nationality "ISO country code"
+        varchar tax_id UK "SSN for individuals, EIN for business"
+        enum employment_status
+        decimal annual_income "Annual income in USD"
+        date registration_date
+        enum kyc_status "PENDING, IN_PROGRESS, VERIFIED, REJECTED"
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by FK
+        bigint updated_by FK
+        int version
+        boolean is_deleted
+        timestamptz deleted_at
+        bigint deleted_by FK
+    }
+
+    account_applications {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        varchar application_number UK "Human-readable application reference"
+        bigint customer_id FK
+        enum account_type "CHECKING, SAVINGS, PREMIUM, BUSINESS_CHECKING, BUSINESS_SAVINGS"
+        decimal initial_deposit "Initial deposit amount in USD"
+        enum application_status "DRAFT, SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, CANCELLED"
+        timestamptz submitted_at "When application was submitted"
+        int branch_id FK
+        bigint assigned_staff_id FK
+        text purpose "Customer stated purpose for account"
+        int estimated_monthly_transactions "Expected transaction volume"
+        boolean wants_direct_deposit
+        boolean wants_online_banking
+        boolean wants_debit_card
+        int risk_score "Risk assessment score 0-100"
+        enum priority "LOW, STANDARD, HIGH, URGENT"
+        timestamptz expires_at "Application expiration date"
+        timestamptz approved_at "When application was approved"
+        timestamptz rejected_at "When application was rejected"
+        text rejection_reason "Reason for rejection"
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by FK
+        bigint updated_by FK
+        int version
+        boolean is_deleted
+        timestamptz deleted_at
+        bigint deleted_by FK
+    }
+
+    bank_accounts {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        varchar account_number UK "Customer-facing account number"
+        enum account_type
+        bigint customer_id FK
+        bigint application_id UK "Source application"
+        int branch_id FK
+        decimal current_balance
+        decimal available_balance
+        enum account_status "ACTIVE, SUSPENDED, CLOSED, DORMANT"
+        date opened_date
+        decimal interest_rate "Annual interest rate"
+        decimal minimum_balance
+        decimal monthly_fee
+        decimal overdraft_limit
+        date last_statement_date
+        date last_activity_date "For dormancy tracking"
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by FK
+        bigint updated_by FK
+        int version
+        boolean is_deleted
+        timestamptz deleted_at
+        bigint deleted_by FK
+    }
+
+    documents {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        enum document_type "DRIVERS_LICENSE, PASSPORT, UTILITY_BILL, BANK_STATEMENT, TAX_RETURN, BUSINESS_LICENSE"
+        bigint application_id FK
+        varchar file_name "Original uploaded filename"
+        varchar file_path "Storage path for document"
+        bigint file_size "File size in bytes"
+        varchar mime_type "File MIME type"
+        timestamptz upload_date
+        enum verification_status "PENDING, VERIFIED, REJECTED, EXPIRED"
+        date expiry_date "Document expiration date if applicable"
+        varchar issuing_state "State/province that issued document"
+        varchar issuing_country "Country that issued document"
+        varchar document_number "Document number from issuing authority"
+        date issue_date "When document was issued"
+        text verification_notes "Notes from verification process"
+        timestamptz verified_at "When document was verified"
+        bigint verified_by FK
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by FK
+        bigint updated_by FK
+        int version
+        boolean is_deleted
+        timestamptz deleted_at
+        bigint deleted_by FK
+    }
+
+    identity_verifications {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        bigint customer_id FK
+        enum verification_method "DOCUMENT_SCAN, BIOMETRIC, KNOWLEDGE_BASED, MANUAL_REVIEW"
+        enum verification_status "PENDING, PASSED, FAILED, REQUIRES_MANUAL_REVIEW"
+        timestamptz verification_date
+        int verification_score "Verification confidence score 0-100"
+        varchar provider_name "Third-party verification provider"
+        varchar provider_reference_id "Provider transaction reference"
+        int face_match_score "Biometric face match score 0-100"
+        varchar document_authenticity "AUTHENTIC, SUSPICIOUS, FAKE"
+        varchar extracted_name "Name extracted from document"
+        date extracted_date_of_birth "DOB extracted from document"
+        text extracted_address "Address extracted from document"
+        text verification_notes "Additional verification details"
+        bigint reviewed_by FK
+        timestamptz reviewed_at "When manual review was completed"
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by FK
+        bigint updated_by FK
+        int version
+    }
+
+    address_verifications {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        bigint customer_id FK
+        varchar address_line1
+        varchar address_line2
+        varchar city
+        varchar state
+        varchar postal_code
+        varchar country
+        enum verification_status "PENDING, VERIFIED, REJECTED, EXPIRED"
+        varchar verification_method "DOCUMENT, UTILITY_BILL, BANK_STATEMENT"
+        timestamptz verification_date
+        boolean is_current_address
+        bigint verified_by FK
+        text verification_notes
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by FK
+        bigint updated_by FK
+        int version
+    }
+
+    compliance_checks {
+        bigint id PK
+        varchar public_id UK "TSID for API access"
+        bigint application_id FK
+        enum check_type "AML_SCREENING, SANCTIONS_CHECK, PEP_CHECK, CREDIT_CHECK, FRAUD_CHECK"
+        enum check_status "PENDING, CLEARED, FLAGGED, FAILED, MANUAL_REVIEW_REQUIRED"
+        timestamptz check_date
+        varchar check_provider "Third-party compliance provider"
+        varchar provider_reference_id "Provider transaction reference"
+        enum risk_level "LOW, MEDIUM, HIGH, CRITICAL"
+        int matches_found "Number of potential matches"
+        varchar sanctions_check_result "CLEAR, MATCH, POTENTIAL_MATCH"
+        varchar pep_check_result "CLEAR, MATCH, POTENTIAL_MATCH"
+        varchar adverse_media_result "CLEAR, MATCH, POTENTIAL_MATCH"
+        int credit_score "Credit score if credit check performed"
+        boolean manual_review_required
+        text reviewer_notes "Manual review notes"
+        bigint reviewed_by FK
+        timestamptz reviewed_at "When manual review was completed"
+        timestamptz created_at
+        timestamptz updated_at
+        bigint created_by FK
+        bigint updated_by FK
+        int version
+    }
+
+    audit_logs {
+        bigint id PK
+        varchar table_name "Table that was modified"
+        bigint record_id "ID of the modified record"
+        varchar record_public_id "Public ID of the modified record"
+        varchar operation "INSERT, UPDATE, DELETE"
+        jsonb old_values "Previous values before change"
+        jsonb new_values "New values after change"
+        text[] changed_fields "Array of field names that changed"
+        bigint user_id FK
+        varchar user_email "Email of user who made change"
+        inet ip_address "IP address of the change"
+        text user_agent "Browser/client user agent"
+        timestamptz created_at
+    }
+
+    %% Relationships
+    branches ||--o{ staff_members : "manages"
+    staff_members ||--o{ customers : "created_by"
+    staff_members ||--o{ customers : "updated_by"
+    staff_members ||--o{ customers : "deleted_by"
+    
+    customers ||--o{ account_applications : "submits"
+    customers ||--o{ bank_accounts : "owns"
+    customers ||--o{ identity_verifications : "undergoes"
+    customers ||--o{ address_verifications : "has"
+    
+    branches ||--o{ account_applications : "processes"
+    staff_members ||--o{ account_applications : "assigned_to"
+    staff_members ||--o{ account_applications : "created_by"
+    staff_members ||--o{ account_applications : "updated_by"
+    staff_members ||--o{ account_applications : "deleted_by"
+    
+    account_applications ||--|| bank_accounts : "creates"
+    account_applications ||--o{ documents : "requires"
+    account_applications ||--o{ compliance_checks : "undergoes"
+    
+    branches ||--o{ bank_accounts : "manages"
+    staff_members ||--o{ bank_accounts : "created_by"
+    staff_members ||--o{ bank_accounts : "updated_by"
+    staff_members ||--o{ bank_accounts : "deleted_by"
+    
+    staff_members ||--o{ documents : "verified_by"
+    staff_members ||--o{ documents : "created_by"
+    staff_members ||--o{ documents : "updated_by"
+    staff_members ||--o{ documents : "deleted_by"
+    
+    staff_members ||--o{ identity_verifications : "reviewed_by"
+    staff_members ||--o{ identity_verifications : "created_by"
+    staff_members ||--o{ identity_verifications : "updated_by"
+    
+    staff_members ||--o{ address_verifications : "verified_by"
+    staff_members ||--o{ address_verifications : "created_by"
+    staff_members ||--o{ address_verifications : "updated_by"
+    
+    staff_members ||--o{ compliance_checks : "reviewed_by"
+    staff_members ||--o{ compliance_checks : "created_by"
+    staff_members ||--o{ compliance_checks : "updated_by"
+    
+    staff_members ||--o{ audit_logs : "user_id"

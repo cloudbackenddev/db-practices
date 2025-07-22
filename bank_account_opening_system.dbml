@@ -1,0 +1,472 @@
+Project bank_account_opening_system {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Digital Bank Account Opening System
+    
+    A comprehensive system for managing customer onboarding and bank account creation.
+    Handles customer verification, document collection, compliance checks, and account provisioning.
+    Used by retail customers, business customers, and bank staff for account management.
+    
+    Compliance: GDPR, BSA/AML, KYC, SOX
+    Framework: Spring Boot JPA
+    Expected Volume: 50K customers, 100K applications annually, 75K active accounts
+  '''
+}
+
+// Enums for status and type fields
+enum customer_type {
+  INDIVIDUAL
+  BUSINESS
+  JOINT
+}
+
+enum kyc_status {
+  PENDING
+  IN_PROGRESS
+  VERIFIED
+  REJECTED
+}
+
+enum employment_status {
+  EMPLOYED
+  UNEMPLOYED
+  SELF_EMPLOYED
+  RETIRED
+  STUDENT
+}
+
+enum account_type {
+  CHECKING
+  SAVINGS
+  PREMIUM
+  BUSINESS_CHECKING
+  BUSINESS_SAVINGS
+}
+
+enum application_status {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum priority_level {
+  LOW
+  STANDARD
+  HIGH
+  URGENT
+}
+
+enum account_status {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+  DORMANT
+}
+
+enum document_type {
+  DRIVERS_LICENSE
+  PASSPORT
+  UTILITY_BILL
+  BANK_STATEMENT
+  TAX_RETURN
+  BUSINESS_LICENSE
+}
+
+enum verification_status {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum identity_verification_method {
+  DOCUMENT_SCAN
+  BIOMETRIC
+  KNOWLEDGE_BASED
+  MANUAL_REVIEW
+}
+
+enum identity_verification_status {
+  PENDING
+  PASSED
+  FAILED
+  REQUIRES_MANUAL_REVIEW
+}
+
+enum compliance_check_type {
+  AML_SCREENING
+  SANCTIONS_CHECK
+  PEP_CHECK
+  CREDIT_CHECK
+  FRAUD_CHECK
+}
+
+enum compliance_check_status {
+  PENDING
+  CLEARED
+  FLAGGED
+  FAILED
+  MANUAL_REVIEW_REQUIRED
+}
+
+enum risk_level {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Reference/Lookup Tables
+Table branches {
+  id serial [pk]
+  branch_code varchar(20) [not null, unique, note: 'Unique branch identifier']
+  branch_name varchar(100) [not null, note: 'Branch display name']
+  address_line1 varchar(255) [not null]
+  address_line2 varchar(255)
+  city varchar(100) [not null]
+  state varchar(50) [not null]
+  postal_code varchar(20) [not null]
+  country varchar(3) [not null, default: 'USA', note: 'ISO country code']
+  phone varchar(20)
+  email varchar(255)
+  manager_name varchar(100)
+  is_active boolean [not null, default: true]
+  sort_order integer
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    branch_code [name: 'idx_branches_code', note: 'Branch lookup by code']
+    (state, city) [name: 'idx_branches_location', note: 'Geographic search']
+  }
+  
+  Note: 'Bank branch locations where accounts are managed'
+}
+
+Table staff_members {
+  id bigint [pk, default: `nextval('staff_members_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  employee_id varchar(50) [not null, unique, note: 'Internal employee identifier']
+  first_name varchar(100) [not null]
+  last_name varchar(100) [not null]
+  email varchar(255) [not null, unique]
+  phone varchar(20)
+  branch_id integer [not null, ref: > branches.id]
+  role varchar(50) [not null, note: 'TELLER, MANAGER, COMPLIANCE_OFFICER, etc.']
+  is_active boolean [not null, default: true]
+  hire_date date [not null]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint
+  updated_by bigint
+  version integer [not null, default: 1]
+  
+  indexes {
+    public_id [name: 'idx_staff_public_id', note: 'API lookup']
+    employee_id [name: 'idx_staff_employee_id', note: 'Internal lookup']
+    email [name: 'idx_staff_email', note: 'Authentication lookup']
+    branch_id [name: 'idx_staff_branch', note: 'Branch staff queries']
+    (role, is_active) [name: 'idx_staff_role_active', note: 'Role-based access']
+  }
+  
+  Note: 'Bank staff members who process applications and manage accounts'
+}
+
+// Main Business Entities
+Table customers {
+  id bigint [pk, default: `nextval('customers_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  first_name varchar(100) [not null]
+  last_name varchar(100) [not null]
+  date_of_birth date [not null, note: 'Must be 18+ for account opening']
+  email varchar(255) [not null, unique, note: 'Primary contact and login']
+  phone varchar(20) [not null, note: 'Contact phone number']
+  customer_type customer_type [not null, default: 'INDIVIDUAL']
+  nationality varchar(3) [not null, note: 'ISO country code']
+  tax_id varchar(50) [unique, note: 'SSN for individuals, EIN for business']
+  employment_status employment_status
+  annual_income decimal(15,2) [note: 'Annual income in USD']
+  registration_date date [not null, default: `CURRENT_DATE`]
+  kyc_status kyc_status [not null, default: 'PENDING']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint [ref: > staff_members.id]
+  updated_by bigint [ref: > staff_members.id]
+  version integer [not null, default: 1]
+  is_deleted boolean [not null, default: false]
+  deleted_at timestamptz
+  deleted_by bigint [ref: > staff_members.id]
+  
+  indexes {
+    public_id [name: 'idx_customers_public_id', note: 'High frequency API lookup']
+    email [name: 'idx_customers_email', note: 'High frequency login lookup']
+    tax_id [name: 'idx_customers_tax_id', note: 'Medium frequency compliance lookup']
+    phone [name: 'idx_customers_phone', note: 'Medium frequency customer service lookup']
+    (first_name, last_name) [name: 'idx_customers_name', note: 'Medium frequency search']
+    kyc_status [name: 'idx_customers_kyc_status', note: 'Low frequency compliance reporting']
+    (is_deleted, email) [name: 'idx_customers_active_email', note: 'Active customer email lookup']
+  }
+  
+  Note: 'Individual and business customers who open bank accounts'
+}
+
+Table account_applications {
+  id bigint [pk, default: `nextval('account_applications_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  application_number varchar(50) [not null, unique, note: 'Human-readable application reference']
+  customer_id bigint [not null, ref: > customers.id]
+  account_type account_type [not null]
+  initial_deposit decimal(15,2) [not null, note: 'Initial deposit amount in USD']
+  application_status application_status [not null, default: 'DRAFT']
+  submitted_at timestamptz [note: 'When application was submitted']
+  branch_id integer [not null, ref: > branches.id]
+  assigned_staff_id bigint [ref: > staff_members.id]
+  purpose text [note: 'Customer stated purpose for account']
+  estimated_monthly_transactions integer [note: 'Expected transaction volume']
+  wants_direct_deposit boolean [not null, default: false]
+  wants_online_banking boolean [not null, default: false]
+  wants_debit_card boolean [not null, default: false]
+  risk_score integer [note: 'Risk assessment score 0-100']
+  priority priority_level [not null, default: 'STANDARD']
+  expires_at timestamptz [note: 'Application expiration date']
+  approved_at timestamptz [note: 'When application was approved']
+  rejected_at timestamptz [note: 'When application was rejected']
+  rejection_reason text [note: 'Reason for rejection']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint [ref: > staff_members.id]
+  updated_by bigint [ref: > staff_members.id]
+  version integer [not null, default: 1]
+  is_deleted boolean [not null, default: false]
+  deleted_at timestamptz
+  deleted_by bigint [ref: > staff_members.id]
+  
+  indexes {
+    public_id [name: 'idx_applications_public_id', note: 'High frequency API lookup']
+    application_number [name: 'idx_applications_number', note: 'High frequency customer lookup']
+    customer_id [name: 'idx_applications_customer', note: 'High frequency customer history']
+    application_status [name: 'idx_applications_status', note: 'High frequency staff workflow']
+    assigned_staff_id [name: 'idx_applications_staff', note: 'High frequency staff workload']
+    branch_id [name: 'idx_applications_branch', note: 'Medium frequency branch management']
+    submitted_at [name: 'idx_applications_submitted', note: 'Medium frequency SLA tracking']
+    (risk_score, application_status) [name: 'idx_applications_risk', note: 'Low frequency risk management']
+    (customer_id, account_type, application_status) [name: 'idx_applications_customer_type', note: 'Prevent duplicate pending applications']
+  }
+  
+  Note: 'Customer applications to open new bank accounts'
+}
+
+Table bank_accounts {
+  id bigint [pk, default: `nextval('bank_accounts_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  account_number varchar(20) [not null, unique, note: 'Customer-facing account number']
+  account_type account_type [not null]
+  customer_id bigint [not null, ref: > customers.id]
+  application_id bigint [unique, ref: > account_applications.id, note: 'Source application']
+  branch_id integer [not null, ref: > branches.id]
+  current_balance decimal(15,2) [not null, default: 0.00]
+  available_balance decimal(15,2) [not null, default: 0.00]
+  account_status account_status [not null, default: 'ACTIVE']
+  opened_date date [not null, default: `CURRENT_DATE`]
+  interest_rate decimal(5,4) [not null, default: 0.0000, note: 'Annual interest rate']
+  minimum_balance decimal(15,2) [not null, default: 0.00]
+  monthly_fee decimal(10,2) [not null, default: 0.00]
+  overdraft_limit decimal(15,2) [not null, default: 0.00]
+  last_statement_date date
+  last_activity_date date [note: 'For dormancy tracking']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint [ref: > staff_members.id]
+  updated_by bigint [ref: > staff_members.id]
+  version integer [not null, default: 1]
+  is_deleted boolean [not null, default: false]
+  deleted_at timestamptz
+  deleted_by bigint [ref: > staff_members.id]
+  
+  indexes {
+    public_id [name: 'idx_accounts_public_id', note: 'High frequency API lookup']
+    account_number [name: 'idx_accounts_number', note: 'High frequency transaction lookup']
+    customer_id [name: 'idx_accounts_customer', note: 'High frequency customer portfolio']
+    account_status [name: 'idx_accounts_status', note: 'High frequency active account queries']
+    branch_id [name: 'idx_accounts_branch', note: 'Medium frequency branch management']
+    account_type [name: 'idx_accounts_type', note: 'Medium frequency product reporting']
+    (current_balance, account_status) [name: 'idx_accounts_balance', note: 'Low frequency risk management']
+    last_activity_date [name: 'idx_accounts_activity', note: 'Dormancy tracking']
+  }
+  
+  Note: 'Active bank accounts created from approved applications'
+}
+
+Table documents {
+  id bigint [pk, default: `nextval('documents_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  document_type document_type [not null]
+  application_id bigint [not null, ref: > account_applications.id]
+  file_name varchar(255) [not null, note: 'Original uploaded filename']
+  file_path varchar(500) [not null, note: 'Storage path for document']
+  file_size bigint [not null, note: 'File size in bytes']
+  mime_type varchar(100) [not null, note: 'File MIME type']
+  upload_date timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  verification_status verification_status [not null, default: 'PENDING']
+  expiry_date date [note: 'Document expiration date if applicable']
+  issuing_state varchar(50) [note: 'State/province that issued document']
+  issuing_country varchar(3) [note: 'Country that issued document']
+  document_number varchar(100) [note: 'Document number from issuing authority']
+  issue_date date [note: 'When document was issued']
+  verification_notes text [note: 'Notes from verification process']
+  verified_at timestamptz [note: 'When document was verified']
+  verified_by bigint [ref: > staff_members.id]
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint [ref: > staff_members.id]
+  updated_by bigint [ref: > staff_members.id]
+  version integer [not null, default: 1]
+  is_deleted boolean [not null, default: false]
+  deleted_at timestamptz
+  deleted_by bigint [ref: > staff_members.id]
+  
+  indexes {
+    public_id [name: 'idx_documents_public_id', note: 'API lookup']
+    application_id [name: 'idx_documents_application', note: 'High frequency application processing']
+    document_type [name: 'idx_documents_type', note: 'Medium frequency compliance queries']
+    verification_status [name: 'idx_documents_verification', note: 'High frequency pending review']
+    upload_date [name: 'idx_documents_upload_date', note: 'Low frequency aging reports']
+    (application_id, document_type) [name: 'idx_documents_app_type', note: 'Required document checks']
+  }
+  
+  Note: 'Digital documents submitted by customers for verification'
+}
+
+Table identity_verifications {
+  id bigint [pk, default: `nextval('identity_verifications_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  customer_id bigint [not null, ref: > customers.id]
+  verification_method identity_verification_method [not null]
+  verification_status identity_verification_status [not null, default: 'PENDING']
+  verification_date timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  verification_score integer [note: 'Verification confidence score 0-100']
+  provider_name varchar(100) [note: 'Third-party verification provider']
+  provider_reference_id varchar(255) [note: 'Provider transaction reference']
+  face_match_score integer [note: 'Biometric face match score 0-100']
+  document_authenticity varchar(50) [note: 'AUTHENTIC, SUSPICIOUS, FAKE']
+  extracted_name varchar(200) [note: 'Name extracted from document']
+  extracted_date_of_birth date [note: 'DOB extracted from document']
+  extracted_address text [note: 'Address extracted from document']
+  verification_notes text [note: 'Additional verification details']
+  reviewed_by bigint [ref: > staff_members.id]
+  reviewed_at timestamptz [note: 'When manual review was completed']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint [ref: > staff_members.id]
+  updated_by bigint [ref: > staff_members.id]
+  version integer [not null, default: 1]
+  
+  indexes {
+    public_id [name: 'idx_identity_verifications_public_id', note: 'API lookup']
+    customer_id [name: 'idx_identity_verifications_customer', note: 'Medium frequency customer status']
+    verification_status [name: 'idx_identity_verifications_status', note: 'Pending review workflow']
+    verification_date [name: 'idx_identity_verifications_date', note: 'Chronological tracking']
+    provider_reference_id [name: 'idx_identity_verifications_provider_ref', note: 'Provider lookup']
+  }
+  
+  Note: 'Identity verification records using various verification methods'
+}
+
+Table address_verifications {
+  id bigint [pk, default: `nextval('address_verifications_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  customer_id bigint [not null, ref: > customers.id]
+  address_line1 varchar(255) [not null]
+  address_line2 varchar(255)
+  city varchar(100) [not null]
+  state varchar(50) [not null]
+  postal_code varchar(20) [not null]
+  country varchar(3) [not null, default: 'USA']
+  verification_status verification_status [not null, default: 'PENDING']
+  verification_method varchar(50) [note: 'DOCUMENT, UTILITY_BILL, BANK_STATEMENT, etc.']
+  verification_date timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  is_current_address boolean [not null, default: true]
+  verified_by bigint [ref: > staff_members.id]
+  verification_notes text
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint [ref: > staff_members.id]
+  updated_by bigint [ref: > staff_members.id]
+  version integer [not null, default: 1]
+  
+  indexes {
+    public_id [name: 'idx_address_verifications_public_id', note: 'API lookup']
+    customer_id [name: 'idx_address_verifications_customer', note: 'Customer address history']
+    verification_status [name: 'idx_address_verifications_status', note: 'Pending verification workflow']
+    (customer_id, is_current_address) [name: 'idx_address_verifications_current', note: 'Current address lookup']
+  }
+  
+  Note: 'Address verification records for customers including historical addresses'
+}
+
+Table compliance_checks {
+  id bigint [pk, default: `nextval('compliance_checks_id_seq')`]
+  public_id varchar(26) [not null, unique, note: 'TSID for API access']
+  application_id bigint [not null, ref: > account_applications.id]
+  check_type compliance_check_type [not null]
+  check_status compliance_check_status [not null, default: 'PENDING']
+  check_date timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  check_provider varchar(100) [note: 'Third-party compliance provider']
+  provider_reference_id varchar(255) [note: 'Provider transaction reference']
+  risk_level risk_level [note: 'Risk assessment result']
+  matches_found integer [not null, default: 0, note: 'Number of potential matches']
+  sanctions_check_result varchar(50) [note: 'CLEAR, MATCH, POTENTIAL_MATCH']
+  pep_check_result varchar(50) [note: 'CLEAR, MATCH, POTENTIAL_MATCH']
+  adverse_media_result varchar(50) [note: 'CLEAR, MATCH, POTENTIAL_MATCH']
+  credit_score integer [note: 'Credit score if credit check performed']
+  manual_review_required boolean [not null, default: false]
+  reviewer_notes text [note: 'Manual review notes']
+  reviewed_by bigint [ref: > staff_members.id]
+  reviewed_at timestamptz [note: 'When manual review was completed']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  created_by bigint [ref: > staff_members.id]
+  updated_by bigint [ref: > staff_members.id]
+  version integer [not null, default: 1]
+  
+  indexes {
+    public_id [name: 'idx_compliance_checks_public_id', note: 'API lookup']
+    application_id [name: 'idx_compliance_checks_application', note: 'High frequency application processing']
+    check_type [name: 'idx_compliance_checks_type', note: 'Check type reporting']
+    check_status [name: 'idx_compliance_checks_status', note: 'Pending review workflow']
+    (application_id, check_type) [name: 'idx_compliance_checks_app_type', note: 'Required check validation']
+    manual_review_required [name: 'idx_compliance_checks_manual_review', note: 'Manual review queue']
+  }
+  
+  Note: 'Compliance and regulatory checks performed on applications'
+}
+
+// Audit table for sensitive operations
+Table audit_logs {
+  id bigint [pk, default: `nextval('audit_logs_id_seq')`]
+  table_name varchar(100) [not null, note: 'Table that was modified']
+  record_id bigint [not null, note: 'ID of the modified record']
+  record_public_id varchar(26) [note: 'Public ID of the modified record']
+  operation varchar(20) [not null, note: 'INSERT, UPDATE, DELETE']
+  old_values jsonb [note: 'Previous values before change']
+  new_values jsonb [note: 'New values after change']
+  changed_fields text[] [note: 'Array of field names that changed']
+  user_id bigint [ref: > staff_members.id]
+  user_email varchar(255) [note: 'Email of user who made change']
+  ip_address inet [note: 'IP address of the change']
+  user_agent text [note: 'Browser/client user agent']
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  
+  indexes {
+    table_name [name: 'idx_audit_logs_table', note: 'Table-specific audit queries']
+    record_id [name: 'idx_audit_logs_record', note: 'Record history lookup']
+    record_public_id [name: 'idx_audit_logs_public_id', note: 'Public ID audit trail']
+    user_id [name: 'idx_audit_logs_user', note: 'User activity tracking']
+    created_at [name: 'idx_audit_logs_created', note: 'Time-based audit queries']
+    (table_name, record_id) [name: 'idx_audit_logs_table_record', note: 'Specific record audit trail']
+  }
+  
+  Note: 'Comprehensive audit trail for all sensitive data changes'
+}
